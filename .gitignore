@@ -38,6 +38,9 @@ test-results/
 # Chiropractic News Summarizer output
 chiropractic_news_summary.json
 
+# VS Code
+*.code-workspace
+
 # OS generated files
 .DS_Store
 Thumbs.db
