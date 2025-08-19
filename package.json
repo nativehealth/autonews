@@ -1,0 +1,29 @@
+{
+  "name": "chiropractic-news-summarizer",
+  "version": "1.0.0",
+  "description": "Tool to fetch and summarize chiropractic news articles",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node run-tests.js && node comprehensive-test.js",
+    "example": "node example.js"
+  },
+  "keywords": [
+    "scraping",
+    "summarization",
+    "chiropractic",
+    "news"
+  ],
+  "author": "AutoNews Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.3.1",
+    "pnpm": "^10.14.0",
+    "puppeteer": "^21.5.0"
+  },
+  "devDependencies": {
+    "jest": "^29.6.0"
+  }
+}
