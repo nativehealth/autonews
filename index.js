@@ -121,7 +121,7 @@ class ChiropracticNewsSummarizer {
         const title = titleElement ? titleElement.innerText.trim() : 'No Title';
         
         // Extract author with multiple fallbacks
-        let authorElement = document.querySelector('.author-name') ||
+        let authorElement = document.querySelector('.entry-author-name') ||
                            document.querySelector('.vcard .fn');
         if (!authorElement) {
           // Try to find author in meta tags or other common locations
@@ -132,7 +132,7 @@ class ChiropracticNewsSummarizer {
         const author = authorElement ? authorElement.innerText.trim() : 'Unknown Author';
         
         // Extract publication date with multiple fallbacks
-        let dateElement = document.querySelector('.published') ||
+        let dateElement = document.querySelector('entry-time') ||
                          document.querySelector('time');
         if (!dateElement) {
           // Try to find date in meta tags or other common locations
