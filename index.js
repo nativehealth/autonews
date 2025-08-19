@@ -40,20 +40,20 @@ class ChiropracticNewsSummarizer {
       
       // Wait for article elements to load with retry logic
       try {
-        await page.waitForSelector('.post-title a', { timeout: 10000 });
+        await page.waitForSelector('.entry-title a', { timeout: 10000 });
       } catch (waitError) {
-        console.log('Waiting for .post-title a failed, trying alternative selectors...');
+        console.log('Waiting for .entry-title a failed, trying alternative selectors...');
         // Try alternative selectors if the first one fails
-        await page.waitForSelector('h2.post-title a', { timeout: 5000 });
+        await page.waitForSelector('h2.entry-title a', { timeout: 5000 });
       }
       
       // Extract article URLs and titles
       const articles = await page.evaluate(() => {
         // Try multiple selectors to find article elements
-        let articleElements = document.querySelectorAll('.post-title a');
+        let articleElements = document.querySelectorAll('.entry-title a');
         
         if (articleElements.length === 0) {
-          articleElements = document.querySelectorAll('h2.post-title a');
+          articleElements = document.querySelectorAll('h2.entry-title a');
         }
         
         if (articleElements.length === 0) {
@@ -115,7 +115,7 @@ class ChiropracticNewsSummarizer {
       const articleData = await page.evaluate(() => {
         // Extract title with multiple fallbacks
         let titleElement = document.querySelector('h1.entry-title');
-        if (!titleElement) titleElement = document.querySelector('h1.post-title');
+        if (!titleElement) titleElement = document.querySelector('h1.entry-title');
         if (!titleElement) titleElement = document.querySelector('title');
         
         const title = titleElement ? titleElement.innerText.trim() : 'No Title';
