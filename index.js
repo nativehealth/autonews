@@ -14,6 +14,15 @@ class ChiropracticNewsSummarizer {
     this.baseURL = 'https://www.chiroeco.com';
     this.newsCategoryURL = 'https://www.chiroeco.com/category/news/chiropractic-news/';
     this.articles = [];
+    
+    // Load configuration from environment variables with defaults
+    this.config = {
+      requestTimeout: parseInt(process.env.REQUEST_TIMEOUT) || 30000,
+      maxArticles: parseInt(process.env.MAX_ARTICLES) || 10,
+      userAgent: process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      scrapingDelay: parseInt(process.env.SCRAPING_DELAY) || 1000,
+      logLevel: process.env.LOG_LEVEL || 'info'
+    };
   }
 
   /**
@@ -26,16 +35,16 @@ class ChiropracticNewsSummarizer {
       // Using Puppeteer to handle potential JavaScript rendering
       const browser = await puppeteer.launch({
         headless: true,
-        timeout: 30000
+        timeout: this.config.requestTimeout
       });
       const page = await browser.newPage();
       
-      // Set user agent to avoid being blocked
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+      // Set user agent from configuration to avoid being blocked
+      await page.setUserAgent(this.config.userAgent);
       
       await page.goto(this.newsCategoryURL, {
         waitUntil: 'networkidle0',
-        timeout: 30000
+        timeout: this.config.requestTimeout
       });
       
       // Wait for article elements to load with retry logic
@@ -73,6 +82,13 @@ class ChiropracticNewsSummarizer {
       await browser.close();
       
       console.log(`Found ${articles.length} articles`);
+      
+      // Limit articles based on configuration
+      if (articles.length > this.config.maxArticles) {
+        console.log(`Limiting to ${this.config.maxArticles} articles based on configuration`);
+        return articles.slice(0, this.config.maxArticles);
+      }
+      
       return articles;
       
     } catch (error) {
@@ -91,16 +107,16 @@ class ChiropracticNewsSummarizer {
       
       const browser = await puppeteer.launch({
         headless: true,
-        timeout: 30000
+        timeout: this.config.requestTimeout
       });
       const page = await browser.newPage();
       
-      // Set user agent to avoid being blocked
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+      // Set user agent from configuration to avoid being blocked
+      await page.setUserAgent(this.config.userAgent);
       
       await page.goto(articleUrl, {
         waitUntil: 'networkidle0',
-        timeout: 30000
+        timeout: this.config.requestTimeout
       });
       
       // Wait for content to load with retry logic
@@ -122,7 +138,10 @@ class ChiropracticNewsSummarizer {
         
         // Extract author with multiple fallbacks
         let authorElement = document.querySelector('.entry-author-name') ||
-                           document.querySelector('.vcard .fn');
+                           document.querySelector('.author-name') ||
+                           document.querySelector('.vcard .fn') ||
+                           document.querySelector('.byline') ||
+                           document.querySelector('[rel="author"]');
         if (!authorElement) {
           // Try to find author in meta tags or other common locations
           const metaAuthor = document.querySelector('meta[name="author"]');
@@ -132,7 +151,7 @@ class ChiropracticNewsSummarizer {
         const author = authorElement ? authorElement.innerText.trim() : 'Unknown Author';
         
         // Extract publication date with multiple fallbacks
-        let dateElement = document.querySelector('entry-time') ||
+        let dateElement = document.querySelector('.entry-time') ||
                          document.querySelector('time');
         if (!dateElement) {
           // Try to find date in meta tags or other common locations
@@ -186,40 +205,106 @@ class ChiropracticNewsSummarizer {
    * Extract key points and highlights from article content
    */
   extractKeyPoints(content, title) {
-    // This is a simplified approach - in a real implementation,
-    // this would use more sophisticated NLP techniques or LLM integration
-    
+    // Enhanced approach with better text processing
     if (!content || content.length < 50) {
       return ['Content too short to summarize'];
     }
     
-    // Simple approach: extract first few sentences as key points
-    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    // Clean and normalize the content
+    const cleanContent = content
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/[^\w\s.,!?;:-]/g, '') // Remove special characters
+      .trim();
     
-    // Take the first 3 sentences as key points, or all if less than 3
-    const keyPoints = sentences.slice(0, Math.min(3, sentences.length));
+    // Split into sentences with better handling of abbreviations
+    const sentences = cleanContent.split(/[.!?]+/)
+      .filter(s => s.trim().length > 30) // Longer minimum for quality
+      .map(s => s.trim());
     
-    return keyPoints.map(point => point.trim());
+    // Score sentences based on various factors
+    const scoredSentences = sentences.map(sentence => {
+      let score = 0;
+      
+      // Prefer sentences with title words
+      const titleWords = title.toLowerCase().split(/\s+/);
+      const sentenceWords = sentence.toLowerCase().split(/\s+/);
+      const titleMatches = titleWords.filter(word => 
+        word.length > 3 && sentenceWords.some(sw => sw.includes(word))
+      ).length;
+      score += titleMatches * 2;
+      
+      // Prefer sentences with important keywords
+      const importantWords = ['study', 'research', 'treatment', 'patient', 'therapy', 'clinical', 'effective', 'result'];
+      const keywordMatches = importantWords.filter(word => 
+        sentence.toLowerCase().includes(word)
+      ).length;
+      score += keywordMatches;
+      
+      // Prefer sentences in the beginning (more likely to be important)
+      const position = sentences.indexOf(sentence);
+      score += Math.max(0, 5 - position);
+      
+      // Prefer sentences of moderate length
+      const length = sentence.split(/\s+/).length;
+      if (length >= 10 && length <= 30) {
+        score += 2;
+      }
+      
+      return { sentence, score };
+    });
+    
+    // Sort by score and take top 3
+    const topSentences = scoredSentences
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.min(3, sentences.length))
+      .map(item => item.sentence);
+    
+    return topSentences.length > 0 ? topSentences : ['No key points could be extracted'];
   }
 
   /**
-   * Summarize article content using LLM (placeholder for actual implementation)
+   * Summarize article content using enhanced algorithms (placeholder for LLM integration)
    */
   async summarizeContent(content, title) {
-    // This is a placeholder - in a real implementation,
-    // this would integrate with an LLM service like OpenAI or similar
+    console.log('Generating enhanced summary...');
     
-    console.log('Summarizing content using LLM...');
-    
-    // For now, we'll return a simple summary based on key points
-    const keyPoints = this.extractKeyPoints(content, title);
-    
-    if (keyPoints.length === 0) {
-      return 'No significant content found to summarize.';
+    if (!content || content.length < 50) {
+      return 'Article content too short to generate meaningful summary.';
     }
     
-    // Create a basic summary from key points
-    const summary = `Main points from "${title}":\n\n${keyPoints.map((point, i) => `${i + 1}. ${point}`).join('\n')}`;
+    // Extract key points using enhanced method
+    const keyPoints = this.extractKeyPoints(content, title);
+    
+    if (keyPoints.length === 0 || keyPoints[0] === 'No key points could be extracted') {
+      return 'Unable to extract key insights from this article.';
+    }
+    
+    // Create an enhanced summary with better structure
+    let summary = `**${title}**\n\n`;
+    
+    // Add overview based on content length and complexity
+    const wordCount = content.split(/\s+/).length;
+    const complexity = wordCount > 500 ? 'comprehensive' : wordCount > 200 ? 'detailed' : 'brief';
+    summary += `This ${complexity} article covers the following key insights:\n\n`;
+    
+    // Format key points with better presentation
+    keyPoints.forEach((point, i) => {
+      // Clean up the point text
+      const cleanPoint = point.replace(/^\W+/, '').replace(/\W+$/, '');
+      summary += `• ${cleanPoint}\n`;
+    });
+    
+    // Add contextual conclusion based on content analysis
+    const hasStudyMention = content.toLowerCase().includes('study') || content.toLowerCase().includes('research');
+    const hasTreatmentMention = content.toLowerCase().includes('treatment') || content.toLowerCase().includes('therapy');
+    
+    if (hasStudyMention && hasTreatmentMention) {
+      summary += `\n*This article appears to discuss research findings related to chiropractic treatments.*`;
+    } else if (hasStudyMention) {
+      summary += `\n*This article focuses on research and clinical studies in chiropractic care.*`;
+    } else if (hasTreatmentMention) {
+      summary += `\n*This article covers treatment approaches and therapeutic methods.*`;
+    }
     
     return summary;
   }
@@ -302,6 +387,56 @@ class ChiropracticNewsSummarizer {
       console.error('Error saving results:', error);
     }
   }
+
+  /**
+   * Convert results to Markdown format
+   */
+  resultsToMarkdown(results) {
+    if (!results || results.length === 0) {
+      return '# Chiropractic News Summary\n\nNo articles processed.';
+    }
+
+    let markdown = '# Chiropractic News Summary\n\n';
+    markdown += `*Generated on ${new Date().toLocaleDateString()}*\n\n`;
+    markdown += `Total articles processed: **${results.length}**\n\n---\n\n`;
+
+    results.forEach((article, index) => {
+      markdown += `## ${index + 1}. ${article.title}\n\n`;
+      markdown += `**Author:** ${article.author}\n\n`;
+      markdown += `**Date:** ${article.date}\n\n`;
+      markdown += `**URL:** [Read full article](${article.url})\n\n`;
+      
+      if (article.keyPoints && article.keyPoints.length > 0) {
+        markdown += `### Key Points\n\n`;
+        article.keyPoints.forEach((point, i) => {
+          markdown += `${i + 1}. ${point}\n`;
+        });
+        markdown += '\n';
+      }
+
+      if (article.summary) {
+        markdown += `### Summary\n\n${article.summary}\n\n`;
+      }
+
+      markdown += '---\n\n';
+    });
+
+    return markdown;
+  }
+
+  /**
+   * Save results as Markdown file
+   */
+  async saveResultsAsMarkdown(results, filename = 'chiropractic_news_summary.md') {
+    try {
+      const fs = require('fs');
+      const markdown = this.resultsToMarkdown(results);
+      fs.writeFileSync(filename, markdown);
+      console.log(`Markdown results saved to ${filename}`);
+    } catch (error) {
+      console.error('Error saving Markdown results:', error);
+    }
+  }
 }
 
 // Main execution
@@ -322,8 +457,9 @@ async function main() {
       console.log(`   Summary: ${article.summary.substring(0, 200)}...`);
     });
     
-    // Save results to file
+    // Save results to files
     await summarizer.saveResults(results);
+    await summarizer.saveResultsAsMarkdown(results);
     
   } catch (error) {
     console.error('Failed to complete summarization:', error);
